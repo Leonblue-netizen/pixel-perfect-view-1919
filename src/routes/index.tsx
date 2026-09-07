@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { pedirConsejo } from "@/lib/consejo.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -13,7 +15,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "Limit — pon tu límite antes de arriesgar" },
       {
         property: "og:description",
-        content: "Un solo límite, claro y por escrito. Limit te lo recuerda cuando se cumple.",
+        content:
+          "Un solo límite, claro y por escrito. Limit te lo recuerda cuando se cumple.",
       },
     ],
   }),
@@ -22,6 +25,7 @@ export const Route = createFileRoute("/")({
 
 type Limite = {
   descripcion: string;
+  contexto: string;
   monto: number;
   fecha: string; // YYYY-MM-DD
 };
@@ -35,7 +39,12 @@ function leerEstado(): Estado {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return { limite: null, cerrado: false };
-    return JSON.parse(raw) as Estado;
+    const parsed = JSON.parse(raw) as Estado;
+    // compat: límites guardados antes de que existiera "contexto"
+    if (parsed.limite && typeof parsed.limite.contexto !== "string") {
+      parsed.limite.contexto = "";
+    }
+    return parsed;
   } catch {
     return { limite: null, cerrado: false };
   }
@@ -110,17 +119,24 @@ export default function Index() {
 
 function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
   const [descripcion, setDescripcion] = useState("");
+  const [contexto, setContexto] = useState("");
   const [monto, setMonto] = useState("");
   const [fecha, setFecha] = useState("");
 
-  const valido = descripcion.trim() !== "" && Number(monto) > 0 && fecha !== "";
+  const valido =
+    descripcion.trim() !== "" && Number(monto) > 0 && fecha !== "";
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         if (!valido) return;
-        onGuardar({ descripcion: descripcion.trim(), monto: Number(monto), fecha });
+        onGuardar({
+          descripcion: descripcion.trim(),
+          contexto: contexto.trim(),
+          monto: Number(monto),
+          fecha,
+        });
       }}
       className="rounded-4xl bg-card p-7 shadow-xl sm:p-9"
     >
@@ -142,6 +158,16 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
             onChange={(e) => setDescripcion(e.target.value)}
             placeholder="Ej: sociedad con Juan en el salón"
             className="w-full rounded-2xl bg-muted px-5 py-4 text-lg outline-none ring-ring placeholder:text-muted-foreground focus:ring-2"
+          />
+        </Campo>
+
+        <Campo etiqueta="Contexto de la decisión">
+          <textarea
+            value={contexto}
+            onChange={(e) => setContexto(e.target.value)}
+            rows={3}
+            placeholder="Qué te lleva a esto, qué sabes, qué te preocupa. Ej: Juan quiere el dinero rápido y no hay contrato firmado."
+            className="w-full resize-none rounded-2xl bg-muted px-5 py-4 text-base outline-none ring-ring placeholder:text-muted-foreground focus:ring-2"
           />
         </Campo>
 
@@ -167,6 +193,13 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
           />
         </Campo>
       </div>
+
+      <ConsejoIA
+        descripcion={descripcion}
+        contexto={contexto}
+        monto={Number(monto) || 0}
+        fecha={fecha}
+      />
 
       <button
         type="submit"
@@ -211,11 +244,24 @@ function MiLimite({
         </h1>
         <div className="mt-6 rounded-3xl bg-alert-foreground/10 p-5">
           <p className="text-lg font-medium">{limite.descripcion}</p>
+          {limite.contexto ? (
+            <p className="mt-2 text-sm opacity-80">{limite.contexto}</p>
+          ) : null}
           <p className="text-display mt-1 text-3xl">{pesos(limite.monto)}</p>
           <p className="mt-1 text-sm opacity-70">
             Tu fecha era el {new Date(limite.fecha + "T00:00:00").toLocaleDateString("es-MX")}
           </p>
         </div>
+
+        <ConsejoIA
+          descripcion={limite.descripcion}
+          contexto={limite.contexto}
+          monto={limite.monto}
+          fecha={limite.fecha}
+          vencido
+          destacado
+        />
+
         <div className="mt-7 grid gap-3">
           <button
             onClick={onSigo}
@@ -245,15 +291,125 @@ function MiLimite({
 
       <div className="mt-8 rounded-3xl bg-primary-foreground/10 p-5">
         <p className="text-lg font-medium">{limite.descripcion}</p>
+        {limite.contexto ? (
+          <p className="mt-2 text-sm opacity-80">{limite.contexto}</p>
+        ) : null}
         <p className="text-display mt-2 text-4xl">{pesos(limite.monto)}</p>
         <p className="mt-1 text-sm opacity-70">
           Revisas el {new Date(limite.fecha + "T00:00:00").toLocaleDateString("es-MX")}
         </p>
       </div>
+
+      <ConsejoIA
+        descripcion={limite.descripcion}
+        contexto={limite.contexto}
+        monto={limite.monto}
+        fecha={limite.fecha}
+        destacado
+      />
+
       <p className="mt-6 text-sm opacity-70">
         Cuando llegue esa fecha, esta pantalla te va a preguntar si sigues o cortas.
       </p>
     </section>
+  );
+}
+
+function ConsejoIA({
+  descripcion,
+  contexto,
+  monto,
+  fecha,
+  vencido = false,
+  destacado = false,
+}: {
+  descripcion: string;
+  contexto: string;
+  monto: number;
+  fecha: string;
+  vencido?: boolean;
+  destacado?: boolean;
+}) {
+  const pedir = useServerFn(pedirConsejo);
+  const [consejo, setConsejo] = useState<string | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const puedePedir = descripcion.trim() !== "" && monto > 0 && fecha !== "";
+
+  async function pedirConsejoIA() {
+    if (!puedePedir || cargando) return;
+    setCargando(true);
+    setError(null);
+    setConsejo(null);
+    try {
+      const res = await pedir({
+        data: {
+          descripcion: descripcion.trim(),
+          contexto: contexto.trim(),
+          monto,
+          fecha,
+          dias: diasRestantes(fecha),
+          vencido,
+        },
+      });
+      if (res.ok) {
+        setConsejo(res.consejo);
+      } else {
+        setError(
+          res.motivo === "sin-llave"
+            ? "La IA no está configurada todavía."
+            : res.motivo === "vacio"
+              ? "La IA no devolvió consejo. Inténtalo de nuevo."
+              : "No pude pedir el consejo. Inténtalo de nuevo.",
+        );
+      }
+    } catch {
+      setError("No pude pedir el consejo. Inténtalo de nuevo.");
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  return (
+    <div
+      className={`mt-6 rounded-3xl p-5 ${
+        destacado
+          ? "bg-background/5 ring-1 ring-background/10"
+          : "bg-muted"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-display text-lg">Consejo de la IA</span>
+        <span className="rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+          opcional
+        </span>
+      </div>
+      <p className="mt-1 text-sm opacity-70">
+        Un consejo franco sobre esta decisión, según lo que escribiste.
+      </p>
+
+      <button
+        type="button"
+        onClick={pedirConsejoIA}
+        disabled={!puedePedir || cargando}
+        className="mt-4 w-full rounded-2xl border-2 border-secondary/50 px-5 py-3.5 text-base font-bold transition-opacity disabled:opacity-40"
+      >
+        {cargando ? "Pensando…" : "Pedir consejo"}
+      </button>
+
+      {error ? (
+        <p className="mt-3 text-sm text-destructive">{error}</p>
+      ) : null}
+
+      {consejo ? (
+        <div className="mt-4 space-y-3 whitespace-pre-wrap text-base leading-relaxed">
+          {consejo.split("\n").map((p, i) =>
+            p.trim() === "" ? null : <p key={i}>{p}</p>,
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
