@@ -45,7 +45,8 @@ function diasRestantes(fecha: string) {
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
   const [y, m, d] = fecha.split("-").map(Number);
-  const limite = new Date(y, (m ?? 1) - 1, d ?? 1);
+  const limite = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+
   limite.setHours(0, 0, 0, 0);
   return Math.round((limite.getTime() - hoy.getTime()) / 86400000);
 }
