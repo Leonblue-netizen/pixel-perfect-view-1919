@@ -11,7 +11,18 @@ declare module "react" {
       "elevenlabs-convai": React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement>,
         HTMLElement
-      > & { "agent-id"?: string };
+      > & {
+        "agent-id"?: string;
+        language?: string;
+        "action-text"?: string;
+        "start-call-text"?: string;
+        "end-call-text"?: string;
+        "listening-text"?: string;
+        "speaking-text"?: string;
+        "expand-text"?: string;
+        "avatar-orb-color-1"?: string;
+        "avatar-orb-color-2"?: string;
+      };
     }
   }
 }
@@ -103,6 +114,15 @@ export function AsistenteVoz() {
         <elevenlabs-convai
           ref={widgetRef as React.RefObject<HTMLElement>}
           agent-id={AGENT_ID}
+          language="es"
+          action-text="¿Te ayudo?"
+          start-call-text="Iniciar llamada"
+          end-call-text="Terminar"
+          listening-text="Escuchando"
+          speaking-text="Habla para interrumpir"
+          expand-text="Habla con el asistente"
+          avatar-orb-color-1="#C6F135"
+          avatar-orb-color-2="#8B7FE8"
         />
       ) : null}
     </>

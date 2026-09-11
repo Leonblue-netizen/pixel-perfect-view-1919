@@ -72,6 +72,16 @@
     border-color: var(--color-border);
   }
 
+  /* Asistente de voz: mismos colores del sitio */
+  elevenlabs-convai {
+    --el-bg-color: var(--card);
+    --el-text-color: var(--card-foreground);
+    --el-border-color: var(--border);
+    --el-btn-color: var(--primary);
+    --el-btn-text-color: var(--primary-foreground);
+    --el-focus-color: var(--ring);
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
