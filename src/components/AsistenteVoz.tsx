@@ -4,7 +4,7 @@ import { Mic } from "lucide-react";
 const AGENT_ID = "agent_1801m26tgnv2eq0b0xb43znyz0qv";
 const WIDGET_SRC = "https://elevenlabs.io/convai-widget/index.js";
 
-declare global {
+declare module "react" {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
