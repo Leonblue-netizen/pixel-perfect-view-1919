@@ -26,6 +26,7 @@ export const Route = createFileRoute("/")({
 });
 
 type Limite = {
+  id: string;
   descripcion: string;
   contexto: string;
   monto: number;
@@ -33,24 +34,37 @@ type Limite = {
   consejo?: string;
 };
 
-type Estado = { limite: Limite | null; cerrado: boolean };
+type Estado = { limites: Limite[]; cerrado: boolean };
 
 const STORAGE_KEY = "limit.estado.v1";
 const INTRO_KEY = "limit.intro.v2";
 
+function nuevoId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function leerEstado(): Estado {
-  if (typeof window === "undefined") return { limite: null, cerrado: false };
+  if (typeof window === "undefined") return { limites: [], cerrado: false };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { limite: null, cerrado: false };
-    const parsed = JSON.parse(raw) as Estado;
-    // compat: límites guardados antes de que existiera "contexto"
-    if (parsed.limite && typeof parsed.limite.contexto !== "string") {
-      parsed.limite.contexto = "";
+    if (!raw) return { limites: [], cerrado: false };
+    const parsed = JSON.parse(raw) as {
+      limites?: Limite[];
+      limite?: Limite | null;
+      cerrado?: boolean;
+    };
+    // compat: estado anterior guardaba un solo límite en "limite"
+    let limites: Limite[] = Array.isArray(parsed.limites) ? parsed.limites : [];
+    if (limites.length === 0 && parsed.limite) {
+      limites = [parsed.limite];
     }
-    return parsed;
+    for (const l of limites) {
+      if (typeof l.contexto !== "string") l.contexto = "";
+      if (typeof l.id !== "string" || !l.id) l.id = nuevoId();
+    }
+    return { limites, cerrado: parsed.cerrado === true };
   } catch {
-    return { limite: null, cerrado: false };
+    return { limites: [], cerrado: false };
   }
 }
 
@@ -79,9 +93,10 @@ function Blobs() {
 }
 
 export default function Index() {
-  const [estado, setEstado] = useState<Estado>({ limite: null, cerrado: false });
+  const [estado, setEstado] = useState<Estado>({ limites: [], cerrado: false });
   const [introVisto, setIntroVisto] = useState(false);
   const [listo, setListo] = useState(false);
+  const [mostrarFormulario, setMostrarFormulario] = useState(false);
 
   useEffect(() => {
     setEstado(leerEstado());
@@ -102,13 +117,25 @@ export default function Index() {
     }
   }
 
+  function agregarLimite(l: Limite) {
+    guardar({ limites: [...estado.limites, l], cerrado: false });
+    setMostrarFormulario(false);
+  }
+
+  function quitarLimite(id: string, cortado: boolean) {
+    const restantes = estado.limites.filter((l) => l.id !== id);
+    guardar({ limites: restantes, cerrado: cortado && restantes.length === 0 });
+  }
+
+  const hayLimites = estado.limites.length > 0;
+
   return (
     <main className="relative min-h-screen px-5 py-10 sm:py-16">
       <Blobs />
       <div className="relative mx-auto w-full max-w-lg">
         <header className="mb-8 flex items-baseline gap-3">
           <span className="text-display text-3xl text-primary">Limit</span>
-          <span className="text-sm text-muted-foreground">un límite a la vez</span>
+          <span className="text-sm text-muted-foreground">tus límites, por escrito</span>
         </header>
 
         {!listo ? null : !introVisto ? (
@@ -123,15 +150,32 @@ export default function Index() {
             }}
           />
         ) : estado.cerrado ? (
-          <Cierre onNuevo={() => guardar({ limite: null, cerrado: false })} />
-        ) : !estado.limite ? (
-          <Formulario onGuardar={(l) => guardar({ limite: l, cerrado: false })} />
+          <Cierre onNuevo={() => guardar({ limites: estado.limites, cerrado: false })} />
         ) : (
-          <MiLimite
-            limite={estado.limite}
-            onSigo={() => guardar({ limite: null, cerrado: false })}
-            onCorto={() => guardar({ limite: null, cerrado: true })}
-          />
+          <div className="space-y-6">
+            {estado.limites.map((limite) => (
+              <MiLimite
+                key={limite.id}
+                limite={limite}
+                onSigo={() => quitarLimite(limite.id, false)}
+                onCorto={() => quitarLimite(limite.id, true)}
+              />
+            ))}
+
+            {hayLimites && !mostrarFormulario ? (
+              <button
+                onClick={() => setMostrarFormulario(true)}
+                className="w-full rounded-2xl border-2 border-dashed border-border px-6 py-5 text-lg font-bold text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              >
+                + Agregar otro límite
+              </button>
+            ) : (
+              <Formulario
+                onGuardar={agregarLimite}
+                onCancelar={hayLimites ? () => setMostrarFormulario(false) : undefined}
+              />
+            )}
+          </div>
         )}
       </div>
     </main>
@@ -160,7 +204,13 @@ function Intro({ onContinuar }: { onContinuar: () => void }) {
   );
 }
 
-function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
+function Formulario({
+  onGuardar,
+  onCancelar,
+}: {
+  onGuardar: (l: Limite) => void;
+  onCancelar?: () => void;
+}) {
   const [descripcion, setDescripcion] = useState("");
   const [contexto, setContexto] = useState("");
   const [monto, setMonto] = useState("");
@@ -179,6 +229,7 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
         e.preventDefault();
         if (!valido) return;
         onGuardar({
+          id: nuevoId(),
           descripcion: descripcion.trim(),
           contexto: contexto.trim(),
           monto: Number(monto),
@@ -257,6 +308,15 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
       >
         Guardar límite
       </button>
+      {onCancelar ? (
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="mt-3 w-full rounded-2xl border-2 border-border px-6 py-4 text-base font-bold text-muted-foreground"
+        >
+          Cancelar
+        </button>
+      ) : null}
     </form>
   );
 }
@@ -356,9 +416,6 @@ function ConsejoGuardado({ limite }: { limite: Limite }) {
     <div className="mt-6 rounded-3xl border border-secondary/40 bg-secondary/15 p-5">
       <div className="flex items-center gap-2">
         <span className="text-display text-lg">Recomendación</span>
-        <span className="rounded-full bg-secondary/25 px-2 py-0.5 text-xs font-medium">
-          
-        </span>
       </div>
       {limite.consejo ? (
         <div className="mt-4 space-y-3 whitespace-pre-wrap text-base leading-relaxed">
@@ -455,10 +512,7 @@ function ConsejoIA({
   return (
     <div className="mt-6 rounded-3xl border border-secondary/30 bg-secondary/10 p-5">
       <div className="flex items-center gap-2">
-        <span className="text-display text-lg">Consejo de la IA</span>
-        <span className="rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-          automático
-        </span>
+        <span className="text-display text-lg">Recomendación</span>
       </div>
       <p className="mt-1 text-sm opacity-70">
         Un consejo franco sobre esta decisión, según lo que escribiste.
