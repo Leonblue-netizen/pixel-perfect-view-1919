@@ -18,6 +18,8 @@ export const Route = createFileRoute("/")({
         content:
           "Un solo límite, claro y por escrito. Limit te lo recuerda cuando se cumple.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Index,
@@ -33,6 +35,7 @@ type Limite = {
 type Estado = { limite: Limite | null; cerrado: boolean };
 
 const STORAGE_KEY = "limit.estado.v1";
+const INTRO_KEY = "limit.intro.v2";
 
 function leerEstado(): Estado {
   if (typeof window === "undefined") return { limite: null, cerrado: false };
@@ -82,7 +85,7 @@ export default function Index() {
   useEffect(() => {
     setEstado(leerEstado());
     try {
-      setIntroVisto(window.localStorage.getItem("limit.intro.visto") === "1");
+      setIntroVisto(window.localStorage.getItem(INTRO_KEY) === "1");
     } catch {
       /* ignorar */
     }
@@ -107,23 +110,21 @@ export default function Index() {
           <span className="text-sm text-muted-foreground">un límite a la vez</span>
         </header>
 
-        {!listo ? null : estado.cerrado ? (
+        {!listo ? null : !introVisto ? (
+          <Intro
+            onContinuar={() => {
+              try {
+                window.localStorage.setItem(INTRO_KEY, "1");
+              } catch {
+                /* ignorar */
+              }
+              setIntroVisto(true);
+            }}
+          />
+        ) : estado.cerrado ? (
           <Cierre onNuevo={() => guardar({ limite: null, cerrado: false })} />
         ) : !estado.limite ? (
-          introVisto ? (
-            <Formulario onGuardar={(l) => guardar({ limite: l, cerrado: false })} />
-          ) : (
-            <Intro
-              onContinuar={() => {
-                try {
-                  window.localStorage.setItem("limit.intro.visto", "1");
-                } catch {
-                  /* ignorar */
-                }
-                setIntroVisto(true);
-              }}
-            />
-          )
+          <Formulario onGuardar={(l) => guardar({ limite: l, cerrado: false })} />
         ) : (
           <MiLimite
             limite={estado.limite}
@@ -165,7 +166,10 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
   const [fecha, setFecha] = useState("");
 
   const valido =
-    descripcion.trim() !== "" && Number(monto) > 0 && fecha !== "";
+    descripcion.trim() !== "" &&
+    contexto.trim() !== "" &&
+    Number(monto) > 0 &&
+    fecha !== "";
 
   return (
     <form
@@ -294,15 +298,6 @@ function MiLimite({
           </p>
         </div>
 
-        <ConsejoIA
-          descripcion={limite.descripcion}
-          contexto={limite.contexto}
-          monto={limite.monto}
-          fecha={limite.fecha}
-          vencido
-          destacado
-        />
-
         <div className="mt-7 grid gap-3">
           <button
             onClick={onSigo}
@@ -341,14 +336,6 @@ function MiLimite({
         </p>
       </div>
 
-      <ConsejoIA
-        descripcion={limite.descripcion}
-        contexto={limite.contexto}
-        monto={limite.monto}
-        fecha={limite.fecha}
-        destacado
-      />
-
       <p className="mt-6 text-sm opacity-70">
         Cuando llegue esa fecha, esta pantalla te va a preguntar si sigues o cortas.
       </p>
@@ -362,14 +349,12 @@ function ConsejoIA({
   monto,
   fecha,
   vencido = false,
-  destacado = false,
 }: {
   descripcion: string;
   contexto: string;
   monto: number;
   fecha: string;
   vencido?: boolean;
-  destacado?: boolean;
 }) {
   const pedir = useServerFn(pedirConsejo);
   const [consejo, setConsejo] = useState<string | null>(null);
@@ -379,8 +364,7 @@ function ConsejoIA({
   const puedePedir =
     descripcion.trim() !== "" &&
     contexto.trim() !== "" &&
-    monto > 0 &&
-    fecha !== "";
+    monto > 0;
 
   const firma = `${descripcion}|${contexto}|${monto}|${fecha}|${vencido}`;
   const firmaRef = useRef("");
@@ -401,8 +385,8 @@ function ConsejoIA({
             descripcion: descripcion.trim(),
             contexto: contexto.trim(),
             monto,
-            fecha,
-            dias: diasRestantes(fecha),
+            fecha: fecha || "Sin definir",
+            dias: fecha ? diasRestantes(fecha) : 0,
             vencido,
           },
         });
@@ -431,12 +415,10 @@ function ConsejoIA({
     };
   }, [firma, puedePedir, descripcion, contexto, monto, fecha, vencido, pedir]);
 
+  if (!puedePedir) return null;
+
   return (
-    <div
-      className={`mt-6 rounded-3xl p-5 ${
-        destacado ? "bg-background/5 ring-1 ring-background/10" : "bg-muted"
-      }`}
-    >
+    <div className="mt-6 rounded-3xl border border-secondary/30 bg-secondary/10 p-5">
       <div className="flex items-center gap-2">
         <span className="text-display text-lg">Consejo de la IA</span>
         <span className="rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-medium text-secondary-foreground">
