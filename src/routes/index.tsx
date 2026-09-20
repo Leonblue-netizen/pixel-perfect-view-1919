@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { pedirConsejo } from "@/lib/consejo.functions";
 
@@ -76,10 +76,16 @@ function Blobs() {
 
 export default function Index() {
   const [estado, setEstado] = useState<Estado>({ limite: null, cerrado: false });
+  const [introVisto, setIntroVisto] = useState(false);
   const [listo, setListo] = useState(false);
 
   useEffect(() => {
     setEstado(leerEstado());
+    try {
+      setIntroVisto(window.localStorage.getItem("limit.intro.visto") === "1");
+    } catch {
+      /* ignorar */
+    }
     setListo(true);
   }, []);
 
@@ -104,7 +110,20 @@ export default function Index() {
         {!listo ? null : estado.cerrado ? (
           <Cierre onNuevo={() => guardar({ limite: null, cerrado: false })} />
         ) : !estado.limite ? (
-          <Formulario onGuardar={(l) => guardar({ limite: l, cerrado: false })} />
+          introVisto ? (
+            <Formulario onGuardar={(l) => guardar({ limite: l, cerrado: false })} />
+          ) : (
+            <Intro
+              onContinuar={() => {
+                try {
+                  window.localStorage.setItem("limit.intro.visto", "1");
+                } catch {
+                  /* ignorar */
+                }
+                setIntroVisto(true);
+              }}
+            />
+          )
         ) : (
           <MiLimite
             limite={estado.limite}
@@ -114,6 +133,28 @@ export default function Index() {
         )}
       </div>
     </main>
+  );
+}
+
+function Intro({ onContinuar }: { onContinuar: () => void }) {
+  return (
+    <section className="rounded-4xl bg-card p-7 shadow-xl sm:p-9">
+      <h1 className="text-display text-3xl sm:text-4xl">
+        Antes de arriesgar,
+        <br />
+        <span className="text-primary">pon un límite.</span>
+      </h1>
+      <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
+        Escribe en qué decisión te estás metiendo, cuánto estás dispuesto a
+        perder y cuándo revisarlo. Limit te lo recuerda antes de que sea tarde.
+      </p>
+      <button
+        onClick={onContinuar}
+        className="mt-8 w-full rounded-2xl bg-primary px-6 py-5 text-lg font-bold text-primary-foreground transition-opacity"
+      >
+        Empezar
+      </button>
+    </section>
   );
 }
 
@@ -335,74 +376,85 @@ function ConsejoIA({
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const puedePedir = descripcion.trim() !== "" && monto > 0 && fecha !== "";
+  const puedePedir =
+    descripcion.trim() !== "" &&
+    contexto.trim() !== "" &&
+    monto > 0 &&
+    fecha !== "";
 
-  async function pedirConsejoIA() {
-    if (!puedePedir || cargando) return;
-    setCargando(true);
-    setError(null);
-    setConsejo(null);
-    try {
-      const res = await pedir({
-        data: {
-          descripcion: descripcion.trim(),
-          contexto: contexto.trim(),
-          monto,
-          fecha,
-          dias: diasRestantes(fecha),
-          vencido,
-        },
-      });
-      if (res.ok) {
-        setConsejo(res.consejo);
-      } else {
-        setError(
-          res.motivo === "sin-llave"
-            ? "La IA no está configurada todavía."
-            : res.motivo === "vacio"
-              ? "La IA no devolvió consejo. Inténtalo de nuevo."
-              : "No pude pedir el consejo. Inténtalo de nuevo.",
-        );
+  const firma = `${descripcion}|${contexto}|${monto}|${fecha}|${vencido}`;
+  const firmaRef = useRef("");
+
+  useEffect(() => {
+    if (!puedePedir) return;
+    if (firmaRef.current === firma) return;
+    firmaRef.current = firma;
+
+    let cancelado = false;
+    const timer = setTimeout(async () => {
+      setCargando(true);
+      setError(null);
+      setConsejo(null);
+      try {
+        const res = await pedir({
+          data: {
+            descripcion: descripcion.trim(),
+            contexto: contexto.trim(),
+            monto,
+            fecha,
+            dias: diasRestantes(fecha),
+            vencido,
+          },
+        });
+        if (cancelado) return;
+        if (res.ok) {
+          setConsejo(res.consejo);
+        } else {
+          setError(
+            res.motivo === "sin-llave"
+              ? "La IA no está configurada todavía."
+              : res.motivo === "vacio"
+                ? "La IA no devolvió consejo. Inténtalo de nuevo."
+                : "No pude generar el consejo. Inténtalo de nuevo.",
+          );
+        }
+      } catch {
+        if (!cancelado) setError("No pude generar el consejo. Inténtalo de nuevo.");
+      } finally {
+        if (!cancelado) setCargando(false);
       }
-    } catch {
-      setError("No pude pedir el consejo. Inténtalo de nuevo.");
-    } finally {
-      setCargando(false);
-    }
-  }
+    }, 700);
+
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
+  }, [firma, puedePedir, descripcion, contexto, monto, fecha, vencido, pedir]);
 
   return (
     <div
       className={`mt-6 rounded-3xl p-5 ${
-        destacado
-          ? "bg-background/5 ring-1 ring-background/10"
-          : "bg-muted"
+        destacado ? "bg-background/5 ring-1 ring-background/10" : "bg-muted"
       }`}
     >
       <div className="flex items-center gap-2">
         <span className="text-display text-lg">Consejo de la IA</span>
         <span className="rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-          opcional
+          automático
         </span>
       </div>
       <p className="mt-1 text-sm opacity-70">
         Un consejo franco sobre esta decisión, según lo que escribiste.
       </p>
 
-      <button
-        type="button"
-        onClick={pedirConsejoIA}
-        disabled={!puedePedir || cargando}
-        className="mt-4 w-full rounded-2xl border-2 border-secondary/50 px-5 py-3.5 text-base font-bold transition-opacity disabled:opacity-40"
-      >
-        {cargando ? "Pensando…" : "Pedir consejo"}
-      </button>
-
-      {error ? (
+      {cargando ? (
+        <div className="mt-4 flex items-center gap-2 text-sm opacity-70">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-secondary border-t-transparent" />
+          Pensando…
+        </div>
+      ) : error ? (
         <p className="mt-3 text-sm text-destructive">{error}</p>
-      ) : null}
-
-      {consejo ? (
+      ) : consejo ? (
         <div className="mt-4 space-y-3 whitespace-pre-wrap text-base leading-relaxed">
           {consejo.split("\n").map((p, i) =>
             p.trim() === "" ? null : <p key={i}>{p}</p>,
