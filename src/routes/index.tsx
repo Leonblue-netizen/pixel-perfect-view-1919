@@ -30,6 +30,7 @@ type Limite = {
   contexto: string;
   monto: number;
   fecha: string; // YYYY-MM-DD
+  consejo?: string;
 };
 
 type Estado = { limite: Limite | null; cerrado: boolean };
@@ -164,6 +165,7 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
   const [contexto, setContexto] = useState("");
   const [monto, setMonto] = useState("");
   const [fecha, setFecha] = useState("");
+  const [consejoGenerado, setConsejoGenerado] = useState("");
 
   const valido =
     descripcion.trim() !== "" &&
@@ -181,6 +183,7 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
           contexto: contexto.trim(),
           monto: Number(monto),
           fecha,
+          consejo: consejoGenerado || undefined,
         });
       }}
       className="rounded-4xl bg-card p-7 shadow-xl sm:p-9"
@@ -244,6 +247,7 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
         contexto={contexto}
         monto={Number(monto) || 0}
         fecha={fecha}
+        onGenerado={setConsejoGenerado}
       />
 
       <button
@@ -299,6 +303,7 @@ function MiLimite({
         </div>
 
         <div className="mt-7 grid gap-3">
+          <ConsejoGuardado limite={limite} />
           <button
             onClick={onSigo}
             className="w-full rounded-2xl bg-alert-foreground px-6 py-5 text-lg font-bold text-primary"
@@ -336,10 +341,36 @@ function MiLimite({
         </p>
       </div>
 
+      <ConsejoGuardado limite={limite} />
+
       <p className="mt-6 text-sm opacity-70">
         Cuando llegue esa fecha, esta pantalla te va a preguntar si sigues o cortas.
       </p>
     </section>
+  );
+}
+
+function ConsejoGuardado({ limite }: { limite: Limite }) {
+  return (
+    <div className="mt-6 rounded-3xl border border-secondary/40 bg-secondary/15 p-5">
+      <div className="flex items-center gap-2">
+        <span className="text-display text-lg">Consejo de la IA</span>
+        <span className="rounded-full bg-secondary/25 px-2 py-0.5 text-xs font-medium">
+          automático
+        </span>
+      </div>
+      {limite.consejo ? (
+        <div className="mt-4 space-y-3 whitespace-pre-wrap text-base leading-relaxed">
+          {limite.consejo.split("\n").map((parrafo, indice) =>
+            parrafo.trim() ? <p key={indice}>{parrafo}</p> : null,
+          )}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm leading-relaxed opacity-75">
+          Este límite fue creado antes de guardar consejos. Crea un límite nuevo con su contexto para recibirlo aquí.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -349,12 +380,14 @@ function ConsejoIA({
   monto,
   fecha,
   vencido = false,
+  onGenerado,
 }: {
   descripcion: string;
   contexto: string;
   monto: number;
   fecha: string;
   vencido?: boolean;
+  onGenerado?: (consejo: string) => void;
 }) {
   const pedir = useServerFn(pedirConsejo);
   const [consejo, setConsejo] = useState<string | null>(null);
@@ -393,6 +426,7 @@ function ConsejoIA({
         if (cancelado) return;
         if (res.ok) {
           setConsejo(res.consejo);
+          onGenerado?.(res.consejo);
         } else {
           setError(
             res.motivo === "sin-llave"
@@ -413,7 +447,7 @@ function ConsejoIA({
       cancelado = true;
       clearTimeout(timer);
     };
-  }, [firma, puedePedir, descripcion, contexto, monto, fecha, vencido, pedir]);
+  }, [firma, puedePedir, descripcion, contexto, monto, fecha, vencido, pedir, onGenerado]);
 
   if (!puedePedir) return null;
 
