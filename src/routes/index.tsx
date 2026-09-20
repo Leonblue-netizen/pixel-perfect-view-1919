@@ -183,7 +183,7 @@ function Formulario({ onGuardar }: { onGuardar: (l: Limite) => void }) {
           contexto: contexto.trim(),
           monto: Number(monto),
           fecha,
-          consejo: consejoGenerado || undefined,
+          consejo: consejoGenerado,
         });
       }}
       className="rounded-4xl bg-card p-7 shadow-xl sm:p-9"
@@ -302,8 +302,9 @@ function MiLimite({
           </p>
         </div>
 
+        <ConsejoGuardado limite={limite} />
+
         <div className="mt-7 grid gap-3">
-          <ConsejoGuardado limite={limite} />
           <button
             onClick={onSigo}
             className="w-full rounded-2xl bg-alert-foreground px-6 py-5 text-lg font-bold text-primary"
