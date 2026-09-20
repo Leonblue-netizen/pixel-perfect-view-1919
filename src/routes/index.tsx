@@ -209,7 +209,7 @@ function Formulario({
   onCancelar,
 }: {
   onGuardar: (l: Limite) => void;
-  onCancelar?: () => void;
+  onCancelar?: (() => void) | undefined;
 }) {
   const [descripcion, setDescripcion] = useState("");
   const [contexto, setContexto] = useState("");
