@@ -355,9 +355,9 @@ function ConsejoGuardado({ limite }: { limite: Limite }) {
   return (
     <div className="mt-6 rounded-3xl border border-secondary/40 bg-secondary/15 p-5">
       <div className="flex items-center gap-2">
-        <span className="text-display text-lg">Consejo de la IA</span>
+        <span className="text-display text-lg">Recomendación</span>
         <span className="rounded-full bg-secondary/25 px-2 py-0.5 text-xs font-medium">
-          automático
+          
         </span>
       </div>
       {limite.consejo ? (
