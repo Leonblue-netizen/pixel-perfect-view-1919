@@ -36,11 +36,54 @@ type Limite = {
 
 type Estado = { limites: Limite[]; cerrado: boolean };
 
+type Perfil = { nombre: string; color: string };
+
 const STORAGE_KEY = "limit.estado.v1";
 const INTRO_KEY = "limit.intro.v2";
+const PERFIL_KEY = "limit.perfil.v1";
+
+const COLORES_PERFIL = [
+  { nombre: "Rosa", valor: "#FFAEEE" },
+  { nombre: "Amarillo", valor: "#FEF9B0" },
+  { nombre: "Morado", valor: "#A9A9EB" },
+];
+
+const COLOR_PERFIL_POR_DEFECTO = COLORES_PERFIL[0]!.valor;
 
 function nuevoId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function leerPerfil(): Perfil {
+  const porDefecto: Perfil = { nombre: "", color: COLOR_PERFIL_POR_DEFECTO };
+  if (typeof window === "undefined") return porDefecto;
+  try {
+    const raw = window.localStorage.getItem(PERFIL_KEY);
+    if (!raw) return porDefecto;
+    const parsed = JSON.parse(raw) as Partial<Perfil>;
+    return {
+      nombre: typeof parsed.nombre === "string" ? parsed.nombre : "",
+      color:
+        typeof parsed.color === "string" && parsed.color ? parsed.color : porDefecto.color,
+    };
+  } catch {
+    return porDefecto;
+  }
+}
+
+function formatoFechaGoogle(fecha: string) {
+  return fecha.replace(/-/g, "");
+}
+
+function linkGoogleCalendar(limite: Limite) {
+  const dia = formatoFechaGoogle(limite.fecha);
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `Revisar límite: ${limite.descripcion}`,
+    dates: `${dia}/${dia}`,
+    details: `Tu límite era ${pesos(limite.monto)}. ${limite.contexto ?? ""}`.trim(),
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
 function leerEstado(): Estado {
@@ -94,12 +137,14 @@ function Blobs() {
 
 export default function Index() {
   const [estado, setEstado] = useState<Estado>({ limites: [], cerrado: false });
+  const [perfil, setPerfil] = useState<Perfil>({ nombre: "", color: COLOR_PERFIL_POR_DEFECTO });
   const [introVisto, setIntroVisto] = useState(false);
   const [listo, setListo] = useState(false);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
 
   useEffect(() => {
     setEstado(leerEstado());
+    setPerfil(leerPerfil());
     try {
       setIntroVisto(window.localStorage.getItem(INTRO_KEY) === "1");
     } catch {
@@ -107,6 +152,15 @@ export default function Index() {
     }
     setListo(true);
   }, []);
+
+  function guardarPerfil(next: Perfil) {
+    setPerfil(next);
+    try {
+      window.localStorage.setItem(PERFIL_KEY, JSON.stringify(next));
+    } catch {
+      /* ignorar */
+    }
+  }
 
   function guardar(next: Estado) {
     setEstado(next);
@@ -135,12 +189,15 @@ export default function Index() {
       <div className="relative mx-auto w-full max-w-lg">
         <header className="mb-8 flex items-baseline gap-3">
           <span className="text-display text-3xl text-primary">Limit</span>
-          <span className="text-sm text-muted-foreground">tus límites, por escrito</span>
+          <span className="text-sm text-muted-foreground">
+            {perfil.nombre ? `hola, ${perfil.nombre}` : "tus límites, por escrito"}
+          </span>
         </header>
 
         {!listo ? null : !introVisto ? (
           <Intro
-            onContinuar={() => {
+            onContinuar={(nuevoPerfil) => {
+              guardarPerfil(nuevoPerfil);
               try {
                 window.localStorage.setItem(INTRO_KEY, "1");
               } catch {
@@ -157,6 +214,7 @@ export default function Index() {
               <MiLimite
                 key={limite.id}
                 limite={limite}
+                color={perfil.color}
                 onSigo={() => quitarLimite(limite.id, false)}
                 onCorto={() => quitarLimite(limite.id, true)}
               />
@@ -182,7 +240,10 @@ export default function Index() {
   );
 }
 
-function Intro({ onContinuar }: { onContinuar: () => void }) {
+function Intro({ onContinuar }: { onContinuar: (perfil: Perfil) => void }) {
+  const [nombre, setNombre] = useState("");
+  const [color, setColor] = useState(COLOR_PERFIL_POR_DEFECTO);
+
   return (
     <section className="rounded-4xl bg-card p-7 shadow-xl sm:p-9">
       <h1 className="text-display text-3xl sm:text-4xl">
@@ -194,8 +255,41 @@ function Intro({ onContinuar }: { onContinuar: () => void }) {
         Escribe en qué decisión te estás metiendo, cuánto estás dispuesto a
         perder y cuándo revisarlo. Limit te lo recuerda antes de que sea tarde.
       </p>
+
+      <div className="mt-7 space-y-6">
+        <Campo etiqueta="¿Cómo te llamas?">
+          <input
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            placeholder="Tu nombre"
+            className="w-full rounded-2xl bg-muted px-5 py-4 text-lg outline-none ring-ring placeholder:text-muted-foreground focus:ring-2"
+          />
+        </Campo>
+
+        <Campo etiqueta="Elige tu color">
+          <div className="flex gap-3">
+            {COLORES_PERFIL.map((opcion) => (
+              <button
+                key={opcion.valor}
+                type="button"
+                onClick={() => setColor(opcion.valor)}
+                aria-label={opcion.nombre}
+                aria-pressed={color === opcion.valor}
+                className="h-12 w-12 rounded-full transition-transform"
+                style={{
+                  backgroundColor: opcion.valor,
+                  outline: color === opcion.valor ? "3px solid currentColor" : "none",
+                  outlineOffset: "2px",
+                  transform: color === opcion.valor ? "scale(1.1)" : "scale(1)",
+                }}
+              />
+            ))}
+          </div>
+        </Campo>
+      </div>
+
       <button
-        onClick={onContinuar}
+        onClick={() => onContinuar({ nombre: nombre.trim(), color })}
         className="mt-8 w-full rounded-2xl bg-primary px-6 py-5 text-lg font-bold text-primary-foreground transition-opacity"
       >
         Empezar
@@ -330,12 +424,27 @@ function Campo({ etiqueta, children }: { etiqueta: string; children: React.React
   );
 }
 
+function BotonGoogleCalendar({ limite }: { limite: Limite }) {
+  return (
+    <a
+      href={linkGoogleCalendar(limite)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-current/20 px-6 py-4 text-base font-bold transition-opacity hover:opacity-80"
+    >
+      📅 Agregar recordatorio a Google Calendar
+    </a>
+  );
+}
+
 function MiLimite({
   limite,
+  color,
   onSigo,
   onCorto,
 }: {
   limite: Limite;
+  color: string;
   onSigo: () => void;
   onCorto: () => void;
 }) {
@@ -386,12 +495,15 @@ function MiLimite({
   }
 
   return (
-    <section className="rounded-4xl bg-primary p-7 text-primary-foreground shadow-xl sm:p-9">
+    <section
+      className="rounded-4xl p-7 text-primary-foreground shadow-xl sm:p-9"
+      style={{ backgroundColor: color }}
+    >
       <p className="text-sm font-bold uppercase tracking-widest opacity-60">Límite vigente</p>
       <p className="text-display mt-4 text-7xl sm:text-8xl">{dias}</p>
       <p className="text-display text-2xl">{dias === 1 ? "día restante" : "días restantes"}</p>
 
-      <div className="mt-8 rounded-3xl bg-primary-foreground/10 p-5">
+      <div className="mt-8 rounded-3xl bg-black/5 p-5">
         <p className="text-lg font-medium">{limite.descripcion}</p>
         {limite.contexto ? (
           <p className="mt-2 text-sm opacity-80">{limite.contexto}</p>
@@ -403,6 +515,8 @@ function MiLimite({
       </div>
 
       <ConsejoGuardado limite={limite} />
+
+      <BotonGoogleCalendar limite={limite} />
 
       <p className="mt-6 text-sm opacity-70">
         Cuando llegue esa fecha, esta pantalla te va a preguntar si sigues o cortas.
