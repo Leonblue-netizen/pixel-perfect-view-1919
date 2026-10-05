@@ -742,21 +742,20 @@ function BotonGoogleCalendar({ limite }: { limite: Limite }) {
 function BarraProgreso({
   lleva,
   monto,
-  alerta,
+  variante = "normal",
 }: {
   lleva: number;
   monto: number;
-  alerta: boolean;
+  variante?: "normal" | "riesgo" | "pasado";
 }) {
   if (monto <= 0) return null;
   const pct = Math.min(100, Math.round((lleva / monto) * 100));
+  const colorBarra =
+    variante === "pasado" ? "bg-alert" : variante === "riesgo" ? "bg-secondary" : "bg-black/40";
   return (
     <div className="mt-4">
       <div className="h-2 w-full overflow-hidden rounded-full bg-black/10">
-        <div
-          className={`h-full rounded-full ${alerta ? "bg-alert" : "bg-black/40"}`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`h-full rounded-full ${colorBarra}`} style={{ width: `${pct}%` }} />
       </div>
       <p className="mt-2 text-sm opacity-70">
         Llevas {pesos(lleva)} de {pesos(monto)} ({pct}%)
@@ -784,8 +783,13 @@ function MiLimite({
 
   if (necesitaAlerta) {
     const esPasado = limite.estadoAlerta === "pasado";
+    const colorFondo = esPasado ? "bg-alert" : "bg-secondary";
+    const colorTexto = esPasado ? "text-alert-foreground" : "text-secondary-foreground";
+    const colorSuave = esPasado ? "bg-alert-foreground/10" : "bg-secondary-foreground/10";
+    const colorBorde = esPasado ? "border-alert-foreground/40" : "border-secondary-foreground/40";
+    const colorBotonSolido = esPasado ? "bg-alert-foreground" : "bg-secondary-foreground";
     return (
-      <section className="rounded-4xl bg-alert p-7 text-alert-foreground shadow-xl sm:p-9">
+      <section className={`rounded-4xl ${colorFondo} p-7 ${colorTexto} shadow-xl sm:p-9`}>
         <p className="text-sm font-bold uppercase tracking-widest opacity-70">
           {esPasado ? "Se cumplió tu plazo" : "Te estás acercando"}
         </p>
@@ -804,7 +808,7 @@ function MiLimite({
             </>
           )}
         </h1>
-        <div className="mt-6 rounded-3xl bg-alert-foreground/10 p-5">
+        <div className={`mt-6 rounded-3xl ${colorSuave} p-5`}>
           <p className="text-lg font-medium">{limite.descripcion}</p>
           {limite.contexto ? <p className="mt-2 text-sm opacity-80">{limite.contexto}</p> : null}
           <p className="text-display mt-1 text-3xl">{pesos(limite.monto)}</p>
@@ -813,7 +817,11 @@ function MiLimite({
               ? `Tu fecha era el ${new Date(limite.fecha + "T00:00:00").toLocaleDateString("es-MX")}`
               : `Te quedan ${dias} día(s), revisas el ${new Date(limite.fecha + "T00:00:00").toLocaleDateString("es-MX")}`}
           </p>
-          <BarraProgreso lleva={limite.llevaMonto} monto={limite.monto} alerta />
+          <BarraProgreso
+            lleva={limite.llevaMonto}
+            monto={limite.monto}
+            variante={esPasado ? "pasado" : "riesgo"}
+          />
         </div>
 
         <ConsejoGuardado limite={limite} />
@@ -821,13 +829,13 @@ function MiLimite({
         <div className="mt-7 grid gap-3">
           <button
             onClick={onSigo}
-            className="w-full rounded-2xl bg-alert-foreground px-6 py-5 text-lg font-bold text-primary"
+            className={`w-full rounded-2xl ${colorBotonSolido} px-6 py-5 text-lg font-bold text-primary`}
           >
             Sigo
           </button>
           <button
             onClick={onCorto}
-            className="w-full rounded-2xl border-2 border-alert-foreground/40 px-6 py-5 text-lg font-bold"
+            className={`w-full rounded-2xl border-2 ${colorBorde} px-6 py-5 text-lg font-bold`}
           >
             Corto
           </button>
@@ -857,7 +865,7 @@ function MiLimite({
         <p className="mt-1 text-sm opacity-70">
           Revisas el {new Date(limite.fecha + "T00:00:00").toLocaleDateString("es-MX")}
         </p>
-        <BarraProgreso lleva={limite.llevaMonto} monto={limite.monto} alerta={false} />
+        <BarraProgreso lleva={limite.llevaMonto} monto={limite.monto} />
       </div>
 
       {esManual ? (

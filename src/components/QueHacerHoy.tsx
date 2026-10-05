@@ -30,9 +30,13 @@ function AlertaCard({
   const esPasado = alerta.estadoAlerta === "pasado";
   const pct =
     alerta.monto > 0 ? Math.min(100, Math.round((alerta.llevaMonto / alerta.monto) * 100)) : 0;
+  const colorFondo = esPasado ? "bg-alert" : "bg-secondary";
+  const colorTexto = esPasado ? "text-alert-foreground" : "text-secondary-foreground";
+  const colorBotonSolido = esPasado ? "bg-alert-foreground" : "bg-secondary-foreground";
+  const colorBorde = esPasado ? "border-alert-foreground/40" : "border-secondary-foreground/40";
 
   return (
-    <section className="rounded-4xl bg-alert p-7 text-alert-foreground shadow-xl sm:p-9">
+    <section className={`rounded-4xl ${colorFondo} p-7 ${colorTexto} shadow-xl sm:p-9`}>
       <p className="text-sm font-bold uppercase tracking-widest opacity-70">
         {esPasado ? "Se cumplió tu plazo" : "Te estás acercando"}
       </p>
@@ -41,18 +45,18 @@ function AlertaCard({
         Llevas {pesos(alerta.llevaMonto)} de {pesos(alerta.monto)} ({pct}%)
       </p>
       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-black/10">
-        <div className="h-full rounded-full bg-alert-foreground" style={{ width: `${pct}%` }} />
+        <div className={`h-full rounded-full ${colorBotonSolido}`} style={{ width: `${pct}%` }} />
       </div>
       <div className="mt-6 grid grid-cols-2 gap-3">
         <button
           onClick={onSigo}
-          className="rounded-2xl bg-alert-foreground px-4 py-4 text-base font-bold text-primary"
+          className={`rounded-2xl ${colorBotonSolido} px-4 py-4 text-base font-bold text-primary`}
         >
           Sigo
         </button>
         <button
           onClick={onCorto}
-          className="rounded-2xl border-2 border-alert-foreground/40 px-4 py-4 text-base font-bold"
+          className={`rounded-2xl border-2 ${colorBorde} px-4 py-4 text-base font-bold`}
         >
           Corto
         </button>
