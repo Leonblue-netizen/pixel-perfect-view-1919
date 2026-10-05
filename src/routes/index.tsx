@@ -59,7 +59,7 @@ type AlertaLimite = Pick<
 
 type Estado = { limites: Limite[]; cerrado: boolean };
 
-type Perfil = { nombre: string; color: string; negocio: string; whatsapp: string };
+type Perfil = { nombre: string; color: string; negocio: string };
 
 const STORAGE_KEY = "limit.estado.v1";
 const BIENVENIDA_KEY = "limit.bienvenida.v1";
@@ -83,7 +83,6 @@ function leerPerfil(): Perfil {
     nombre: "",
     color: COLOR_PERFIL_POR_DEFECTO,
     negocio: "",
-    whatsapp: "",
   };
   if (typeof window === "undefined") return porDefecto;
   try {
@@ -94,7 +93,6 @@ function leerPerfil(): Perfil {
       nombre: typeof parsed.nombre === "string" ? parsed.nombre : "",
       color: typeof parsed.color === "string" && parsed.color ? parsed.color : porDefecto.color,
       negocio: typeof parsed.negocio === "string" ? parsed.negocio : "",
-      whatsapp: typeof parsed.whatsapp === "string" ? parsed.whatsapp : "",
     };
   } catch {
     return porDefecto;
@@ -204,7 +202,6 @@ export default function Index() {
     nombre: "",
     color: COLOR_PERFIL_POR_DEFECTO,
     negocio: "",
-    whatsapp: "",
   });
   const [bienvenidaVista, setBienvenidaVista] = useState(false);
   const [introVisto, setIntroVisto] = useState(false);
@@ -427,7 +424,6 @@ function Bienvenida({ onContinuar }: { onContinuar: () => void }) {
 function Intro({ onContinuar }: { onContinuar: (perfil: Perfil) => void }) {
   const [nombre, setNombre] = useState("");
   const [negocio, setNegocio] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
   const [color, setColor] = useState(COLOR_PERFIL_POR_DEFECTO);
 
   return (
@@ -481,19 +477,6 @@ function Intro({ onContinuar }: { onContinuar: (perfil: Perfil) => void }) {
             ))}
           </div>
         </Campo>
-
-        <Campo etiqueta="Tu WhatsApp (opcional)">
-          <input
-            value={whatsapp}
-            onChange={(e) => setWhatsapp(e.target.value)}
-            placeholder="Ej: 300 123 4567"
-            inputMode="tel"
-            className="w-full rounded-2xl bg-muted px-5 py-4 text-lg outline-none ring-ring placeholder:text-muted-foreground focus:ring-2"
-          />
-          <span className="mt-2 block text-sm text-muted-foreground">
-            Para avisarte cuando un límite se acerque. Lo puedes dejar en blanco.
-          </span>
-        </Campo>
       </div>
 
       <button
@@ -502,7 +485,6 @@ function Intro({ onContinuar }: { onContinuar: (perfil: Perfil) => void }) {
             nombre: nombre.trim(),
             color,
             negocio: negocio.trim(),
-            whatsapp: whatsapp.trim(),
           })
         }
         className="mt-8 w-full rounded-2xl bg-primary px-6 py-5 text-lg font-bold text-primary-foreground transition-opacity"
