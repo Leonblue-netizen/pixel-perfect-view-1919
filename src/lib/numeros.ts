@@ -12,7 +12,7 @@ export type FilaNumero = {
   fechaVencimiento: string; // YYYY-MM-DD, solo para por_cobrar
 };
 
-export type FilaConError = { fila: number; motivo: string };
+export type FilaConError = { fila: number; motivo: string; hoja?: string };
 
 export type ResultadoParseo =
   | { ok: true; filas: FilaNumero[]; filasConError: FilaConError[]; totalFilas: number }
@@ -21,13 +21,6 @@ export type ResultadoParseo =
   | { ok: false; motivo: "columnas"; columnasFaltantes: string[] };
 
 export type Totales = { caja: number; carteraVencida: number; margen: number };
-
-const COLUMNAS_REQUERIDAS: { clave: keyof typeof ALIAS_COLUMNAS; etiqueta: string }[] = [
-  { clave: "fecha", etiqueta: "fecha" },
-  { clave: "tipo", etiqueta: "tipo" },
-  { clave: "concepto", etiqueta: "concepto" },
-  { clave: "monto", etiqueta: "monto" },
-];
 
 const ALIAS_COLUMNAS = {
   fecha: ["fecha"],
@@ -43,6 +36,52 @@ const ALIAS_COLUMNAS = {
   ],
 };
 
+// Modo plano (una sola hoja con columna "tipo"): usado como respaldo para CSV
+// o archivos que no siguen la plantilla de pestañas por tipo.
+const COLUMNAS_REQUERIDAS_PLANO: { clave: keyof typeof ALIAS_COLUMNAS; etiqueta: string }[] = [
+  { clave: "fecha", etiqueta: "fecha" },
+  { clave: "tipo", etiqueta: "tipo" },
+  { clave: "concepto", etiqueta: "concepto" },
+  { clave: "monto", etiqueta: "monto" },
+];
+
+// Modo por pestañas (plantilla recomendada): cada hoja ya dice el tipo,
+// así que no hace falta escribirlo a mano.
+const COLUMNAS_POR_TIPO: Record<
+  TipoMovimiento,
+  { clave: keyof typeof ALIAS_COLUMNAS; etiqueta: string }[]
+> = {
+  ingreso: [
+    { clave: "fecha", etiqueta: "fecha" },
+    { clave: "concepto", etiqueta: "concepto" },
+    { clave: "monto", etiqueta: "monto" },
+  ],
+  gasto: [
+    { clave: "fecha", etiqueta: "fecha" },
+    { clave: "concepto", etiqueta: "concepto" },
+    { clave: "monto", etiqueta: "monto" },
+  ],
+  por_cobrar: [
+    { clave: "fecha", etiqueta: "fecha" },
+    { clave: "concepto", etiqueta: "concepto" },
+    { clave: "monto", etiqueta: "monto" },
+    { clave: "cliente", etiqueta: "cliente" },
+    { clave: "fecha_vencimiento", etiqueta: "fecha de vencimiento" },
+  ],
+};
+
+const NOMBRES_HOJA: Record<TipoMovimiento, string[]> = {
+  ingreso: ["ingresos", "ingreso"],
+  gasto: ["gastos", "gasto"],
+  por_cobrar: ["por cobrar", "por_cobrar", "cartera", "cuentas por cobrar", "cuenta por cobrar"],
+};
+
+const ETIQUETA_TIPO: Record<TipoMovimiento, string> = {
+  ingreso: "Ingresos",
+  gasto: "Gastos",
+  por_cobrar: "Por cobrar",
+};
+
 export const EXTENSIONES_ACEPTADAS = [".xlsx", ".xls", ".csv"];
 
 function normalizarTexto(s: string): string {
@@ -52,6 +91,14 @@ function normalizarTexto(s: string): string {
 function esExtensionValida(nombreArchivo: string): boolean {
   const n = nombreArchivo.toLowerCase();
   return EXTENSIONES_ACEPTADAS.some((ext) => n.endsWith(ext));
+}
+
+function tipoDesdeNombreHoja(nombre: string): TipoMovimiento | null {
+  const n = normalizarTexto(nombre);
+  for (const [tipo, alias] of Object.entries(NOMBRES_HOJA)) {
+    if (alias.includes(n)) return tipo as TipoMovimiento;
+  }
+  return null;
 }
 
 function mapaEncabezados(encabezados: string[]): Record<string, number> {
@@ -113,29 +160,106 @@ function normalizarFecha(valor: unknown): string | null {
   return null;
 }
 
-export async function parseArchivoNumeros(file: File): Promise<ResultadoParseo> {
-  if (!esExtensionValida(file.name)) {
-    return { ok: false, motivo: "formato" };
+function filasNoVacias(hoja: XLSX.WorkSheet): unknown[][] {
+  const filasCrudas = XLSX.utils.sheet_to_json<unknown[]>(hoja, { header: 1, raw: true });
+  return filasCrudas.filter(
+    (fila) => Array.isArray(fila) && fila.some((c) => c !== undefined && c !== null && c !== ""),
+  );
+}
+
+function parsearFila(
+  cruda: unknown[],
+  mapa: Record<string, number>,
+  tipoFijo: TipoMovimiento | null,
+): { ok: true; fila: Omit<FilaNumero, "fila"> } | { ok: false; motivo: string } {
+  const get = (clave: string) => (mapa[clave] !== undefined ? cruda[mapa[clave]!] : undefined);
+
+  const fecha = normalizarFecha(get("fecha"));
+  const tipo = tipoFijo ?? normalizarTipo(String(get("tipo") ?? ""));
+  const concepto = String(get("concepto") ?? "").trim();
+  const monto = normalizarMonto(get("monto"));
+  const cliente = String(get("cliente") ?? "").trim();
+  const fechaVencimientoCruda = get("fecha_vencimiento");
+  const fechaVencimiento = fechaVencimientoCruda ? normalizarFecha(fechaVencimientoCruda) : null;
+
+  if (!fecha) return { ok: false, motivo: "la fecha no se reconoce" };
+  if (!tipo) return { ok: false, motivo: "el tipo debe ser ingreso, gasto o por cobrar" };
+  if (concepto === "") return { ok: false, motivo: "falta el concepto" };
+  if (monto === null) return { ok: false, motivo: "el monto no es un número" };
+  if (tipo === "por_cobrar" && !fechaVencimiento) {
+    return {
+      ok: false,
+      motivo: "falta la fecha de vencimiento (obligatoria para lo que está por cobrar)",
+    };
   }
 
-  const buffer = await file.arrayBuffer();
-  const libro = XLSX.read(buffer, { type: "array", cellDates: true, codepage: 65001 });
+  return {
+    ok: true,
+    fila: { fecha, tipo, concepto, monto, cliente, fechaVencimiento: fechaVencimiento ?? "" },
+  };
+}
+
+function parseArchivoPorHojas(
+  libro: XLSX.WorkBook,
+  hojasTipadas: { nombre: string; tipo: TipoMovimiento }[],
+): ResultadoParseo {
+  const filas: FilaNumero[] = [];
+  const filasConError: FilaConError[] = [];
+  const columnasFaltantes: string[] = [];
+  let totalFilas = 0;
+
+  for (const { nombre, tipo } of hojasTipadas) {
+    const hoja = libro.Sheets[nombre];
+    if (!hoja) continue;
+    const filasSinVacias = filasNoVacias(hoja);
+    if (filasSinVacias.length === 0) continue;
+
+    const encabezados = (filasSinVacias[0] as unknown[]).map((c) => String(c ?? ""));
+    const mapa = mapaEncabezados(encabezados);
+
+    const faltantes = COLUMNAS_POR_TIPO[tipo]
+      .filter((c) => mapa[c.clave] === undefined)
+      .map((c) => c.etiqueta);
+    if (faltantes.length > 0) {
+      columnasFaltantes.push(`${ETIQUETA_TIPO[tipo]}: ${faltantes.join(", ")}`);
+      continue;
+    }
+
+    const cuerpo = filasSinVacias.slice(1);
+    totalFilas += cuerpo.length;
+
+    cuerpo.forEach((cruda, indice) => {
+      const numeroFila = indice + 2;
+      const resultado = parsearFila(cruda as unknown[], mapa, tipo);
+      if (resultado.ok) {
+        filas.push({ fila: numeroFila, ...resultado.fila });
+      } else {
+        filasConError.push({ fila: numeroFila, motivo: resultado.motivo, hoja: nombre });
+      }
+    });
+  }
+
+  if (columnasFaltantes.length > 0) {
+    return { ok: false, motivo: "columnas", columnasFaltantes };
+  }
+  if (totalFilas === 0) {
+    return { ok: false, motivo: "vacio" };
+  }
+
+  return { ok: true, filas, filasConError, totalFilas };
+}
+
+function parseArchivoPlano(libro: XLSX.WorkBook): ResultadoParseo {
   const hoja = libro.Sheets[libro.SheetNames[0]!];
   if (!hoja) return { ok: false, motivo: "vacio" };
 
-  const filasCrudas = XLSX.utils.sheet_to_json<unknown[]>(hoja, { header: 1, raw: true });
-  const filasSinVacias = filasCrudas.filter(
-    (fila) => Array.isArray(fila) && fila.some((c) => c !== undefined && c !== null && c !== ""),
-  );
-
-  if (filasSinVacias.length === 0) {
-    return { ok: false, motivo: "vacio" };
-  }
+  const filasSinVacias = filasNoVacias(hoja);
+  if (filasSinVacias.length === 0) return { ok: false, motivo: "vacio" };
 
   const encabezados = (filasSinVacias[0] as unknown[]).map((c) => String(c ?? ""));
   const mapa = mapaEncabezados(encabezados);
 
-  const faltantes = COLUMNAS_REQUERIDAS.filter((c) => mapa[c.clave] === undefined).map(
+  const faltantes = COLUMNAS_REQUERIDAS_PLANO.filter((c) => mapa[c.clave] === undefined).map(
     (c) => c.etiqueta,
   );
   if (faltantes.length > 0) {
@@ -143,65 +267,42 @@ export async function parseArchivoNumeros(file: File): Promise<ResultadoParseo> 
   }
 
   const cuerpo = filasSinVacias.slice(1);
-  if (cuerpo.length === 0) {
-    return { ok: false, motivo: "vacio" };
-  }
+  if (cuerpo.length === 0) return { ok: false, motivo: "vacio" };
 
   const filas: FilaNumero[] = [];
   const filasConError: FilaConError[] = [];
 
   cuerpo.forEach((cruda, indice) => {
-    const numeroFila = indice + 2; // +1 por encabezado, +1 porque Excel empieza en 1
-    const get = (clave: string) =>
-      mapa[clave] !== undefined ? (cruda as unknown[])[mapa[clave]!] : undefined;
-
-    const fecha = normalizarFecha(get("fecha"));
-    const tipo = normalizarTipo(String(get("tipo") ?? ""));
-    const concepto = String(get("concepto") ?? "").trim();
-    const monto = normalizarMonto(get("monto"));
-    const cliente = String(get("cliente") ?? "").trim();
-    const fechaVencimientoCruda = get("fecha_vencimiento");
-    const fechaVencimiento = fechaVencimientoCruda ? normalizarFecha(fechaVencimientoCruda) : null;
-
-    if (!fecha) {
-      filasConError.push({ fila: numeroFila, motivo: "la fecha no se reconoce" });
-      return;
+    const numeroFila = indice + 2;
+    const resultado = parsearFila(cruda as unknown[], mapa, null);
+    if (resultado.ok) {
+      filas.push({ fila: numeroFila, ...resultado.fila });
+    } else {
+      filasConError.push({ fila: numeroFila, motivo: resultado.motivo });
     }
-    if (!tipo) {
-      filasConError.push({
-        fila: numeroFila,
-        motivo: "el tipo debe ser ingreso, gasto o por cobrar",
-      });
-      return;
-    }
-    if (concepto === "") {
-      filasConError.push({ fila: numeroFila, motivo: "falta el concepto" });
-      return;
-    }
-    if (monto === null) {
-      filasConError.push({ fila: numeroFila, motivo: "el monto no es un número" });
-      return;
-    }
-    if (tipo === "por_cobrar" && !fechaVencimiento) {
-      filasConError.push({
-        fila: numeroFila,
-        motivo: "falta la fecha de vencimiento (obligatoria para lo que está por cobrar)",
-      });
-      return;
-    }
-
-    filas.push({
-      fila: numeroFila,
-      fecha,
-      tipo,
-      concepto,
-      monto,
-      cliente,
-      fechaVencimiento: fechaVencimiento ?? "",
-    });
   });
 
   return { ok: true, filas, filasConError, totalFilas: cuerpo.length };
+}
+
+export async function parseArchivoNumeros(file: File): Promise<ResultadoParseo> {
+  if (!esExtensionValida(file.name)) {
+    return { ok: false, motivo: "formato" };
+  }
+
+  const buffer = await file.arrayBuffer();
+  const libro = XLSX.read(buffer, { type: "array", cellDates: true, codepage: 65001 });
+
+  const hojasTipadas = libro.SheetNames.map((nombre) => ({
+    nombre,
+    tipo: tipoDesdeNombreHoja(nombre),
+  })).filter((h): h is { nombre: string; tipo: TipoMovimiento } => h.tipo !== null);
+
+  if (hojasTipadas.length > 0) {
+    return parseArchivoPorHojas(libro, hojasTipadas);
+  }
+
+  return parseArchivoPlano(libro);
 }
 
 export function calcularTotales(filas: FilaNumero[]): Totales {
@@ -252,40 +353,31 @@ export function carteraVencidaDetallada(
     .sort((a, b) => b.monto - a.monto);
 }
 
-const ENCABEZADOS_PLANTILLA = [
-  "fecha",
-  "tipo",
-  "concepto",
-  "monto",
-  "cliente",
-  "fecha de vencimiento",
-];
-
-const FILA_EJEMPLO = ["2026-10-01", "ingreso", "Venta de contado", "350000", "", ""];
-
-const FILA_EJEMPLO_COBRO = [
-  "2026-09-15",
-  "por cobrar",
-  "Servicio prestado",
-  "2400000",
-  "Pedro Gómez",
-  "2026-09-20",
-];
-
 export function descargarPlantilla() {
-  const filas = [ENCABEZADOS_PLANTILLA, FILA_EJEMPLO, FILA_EJEMPLO_COBRO];
-  const csv = filas
-    .map((fila) => fila.map((valor) => `"${String(valor).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "plantilla-limit.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const libro = XLSX.utils.book_new();
+
+  const ingresos = XLSX.utils.aoa_to_sheet([
+    ["fecha", "concepto", "monto"],
+    ["2026-10-01", "Venta de contado", "350000"],
+  ]);
+  ingresos["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(libro, ingresos, "Ingresos");
+
+  const gastos = XLSX.utils.aoa_to_sheet([
+    ["fecha", "concepto", "monto"],
+    ["2026-10-02", "Arriendo del local", "500000"],
+  ]);
+  gastos["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(libro, gastos, "Gastos");
+
+  const porCobrar = XLSX.utils.aoa_to_sheet([
+    ["fecha", "cliente", "concepto", "monto", "fecha de vencimiento"],
+    ["2026-09-15", "Pedro Gómez", "Servicio prestado", "2400000", "2026-09-20"],
+  ]);
+  porCobrar["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 30 }, { wch: 14 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(libro, porCobrar, "Por cobrar");
+
+  XLSX.writeFile(libro, "plantilla-limit.xlsx");
 }
 
 export function pesos(n: number) {

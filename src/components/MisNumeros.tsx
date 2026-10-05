@@ -92,9 +92,9 @@ export function MisNumeros() {
               {previa.filasConError.length} fila(s) con error
             </p>
             <ul className="mt-3 space-y-1 text-sm">
-              {previa.filasConError.slice(0, 10).map((e) => (
-                <li key={e.fila}>
-                  Fila {e.fila}: {e.motivo}
+              {previa.filasConError.slice(0, 10).map((e, indice) => (
+                <li key={`${e.hoja ?? ""}-${e.fila}-${indice}`}>
+                  {e.hoja ? `${e.hoja}, fila` : "Fila"} {e.fila}: {e.motivo}
                 </li>
               ))}
             </ul>
@@ -131,8 +131,10 @@ export function MisNumeros() {
       <section className="rounded-4xl bg-card p-7 shadow-xl sm:p-9">
         <h1 className="text-display text-3xl sm:text-4xl">Sube tus números</h1>
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-          Descarga la plantilla, llénala con tus movimientos y súbela aquí. Así Limit puede calcular
-          tu caja, tu cartera vencida y tu margen.
+          Descarga la plantilla: trae 3 pestañas, una para cada cosa — Ingresos, Gastos y Por
+          cobrar. Solo llena cada una con lo que le corresponde, sin tener que escribir el tipo de
+          movimiento, y súbela aquí. Así Limit puede calcular tu caja, tu cartera vencida y tu
+          margen.
         </p>
 
         <MensajeError estado={previa} />
