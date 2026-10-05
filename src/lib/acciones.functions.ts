@@ -95,22 +95,31 @@ export const pedirAcciones = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data }) => {
-    const apiKey = process.env["LOVABLE_API_KEY"];
-    if (!apiKey) {
+    const openaiKey = process.env["OPENAI_API_KEY"];
+    const lovableKey = process.env["LOVABLE_API_KEY"];
+    if (!openaiKey && !lovableKey) {
       return { ok: false as const, acciones: [], motivo: "sin-llave" as const };
     }
 
+    const url = openaiKey
+      ? "https://api.openai.com/v1/chat/completions"
+      : "https://ai.gateway.lovable.dev/v1/chat/completions";
+    const headers: Record<string, string> = openaiKey
+      ? { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` }
+      : {
+          "Content-Type": "application/json",
+          "Lovable-API-Key": lovableKey!,
+          "X-Lovable-AIG-SDK": "fetch",
+        };
+    const model = openaiKey ? "gpt-4o-mini" : "google/gemini-3.7-flash";
+
     let res: Response;
     try {
-      res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      res = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Lovable-API-Key": apiKey,
-          "X-Lovable-AIG-SDK": "fetch",
-        },
+        headers,
         body: JSON.stringify({
-          model: "google/gemini-3.7-flash",
+          model,
           messages: [
             { role: "system", content: SYSTEM },
             { role: "user", content: usuario(data) },
