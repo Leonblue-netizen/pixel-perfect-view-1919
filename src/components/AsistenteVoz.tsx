@@ -105,10 +105,13 @@ export function AsistenteVoz() {
         type="button"
         onClick={abrirAsistente}
         disabled={cargando}
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-2xl bg-primary px-5 py-4 text-base font-bold text-primary-foreground shadow-xl transition-transform hover:scale-[1.03] active:scale-[0.98] disabled:opacity-60"
+        aria-label="Habla con nuestro asistente"
+        className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground shadow-xl transition-transform hover:scale-[1.03] active:scale-[0.98] disabled:opacity-60 sm:h-auto sm:w-auto sm:rounded-2xl sm:px-5 sm:py-4"
       >
-        <Mic className="h-5 w-5" aria-hidden />
-        {cargando ? "Abriendo…" : "Habla con nuestro asistente"}
+        <Mic className="h-5 w-5 shrink-0" aria-hidden />
+        <span className="hidden text-base font-bold sm:inline">
+          {cargando ? "Abriendo…" : "Habla con nuestro asistente"}
+        </span>
       </button>
       {montado ? (
         <elevenlabs-convai

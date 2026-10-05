@@ -302,7 +302,7 @@ export default function Index() {
   const alertas = limitesConEstado.filter(necesitaDecision);
 
   return (
-    <main className="relative min-h-screen px-5 py-10 sm:py-16">
+    <main className="relative min-h-screen px-5 pb-24 pt-10 sm:pb-16 sm:pt-16">
       <Blobs />
       <div className={`relative mx-auto w-full ${mostrarPanel ? "max-w-4xl" : "max-w-lg"}`}>
         <header className="mb-8 flex items-baseline gap-3">
