@@ -14,7 +14,147 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      decisiones: {
+        Row: {
+          decision: string
+          estimado: boolean
+          fecha: string
+          id: string
+          limite_descripcion: string
+          lo_que_decia_alerta: string
+          pesos_evitados: number
+          user_id: string
+        }
+        Insert: {
+          decision: string
+          estimado?: boolean
+          fecha?: string
+          id?: string
+          limite_descripcion?: string
+          lo_que_decia_alerta?: string
+          pesos_evitados?: number
+          user_id?: string
+        }
+        Update: {
+          decision?: string
+          estimado?: boolean
+          fecha?: string
+          id?: string
+          limite_descripcion?: string
+          lo_que_decia_alerta?: string
+          pesos_evitados?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      limites: {
+        Row: {
+          avisos_respondidos: string[]
+          cerrado: boolean
+          compara_con: Json
+          consejo: string | null
+          contexto: string
+          created_at: string
+          descripcion: string
+          fecha: string
+          id: string
+          lleva_manual: number
+          monto: number
+          user_id: string
+        }
+        Insert: {
+          avisos_respondidos?: string[]
+          cerrado?: boolean
+          compara_con?: Json
+          consejo?: string | null
+          contexto?: string
+          created_at?: string
+          descripcion: string
+          fecha: string
+          id?: string
+          lleva_manual?: number
+          monto?: number
+          user_id?: string
+        }
+        Update: {
+          avisos_respondidos?: string[]
+          cerrado?: boolean
+          compara_con?: Json
+          consejo?: string | null
+          contexto?: string
+          created_at?: string
+          descripcion?: string
+          fecha?: string
+          id?: string
+          lleva_manual?: number
+          monto?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      numeros: {
+        Row: {
+          cliente: string | null
+          concepto: string
+          created_at: string
+          fecha: string
+          fecha_vencimiento: string | null
+          fila: number
+          id: string
+          monto: number
+          tipo: string
+          user_id: string
+        }
+        Insert: {
+          cliente?: string | null
+          concepto?: string
+          created_at?: string
+          fecha: string
+          fecha_vencimiento?: string | null
+          fila?: number
+          id?: string
+          monto?: number
+          tipo: string
+          user_id?: string
+        }
+        Update: {
+          cliente?: string | null
+          concepto?: string
+          created_at?: string
+          fecha?: string
+          fecha_vencimiento?: string | null
+          fila?: number
+          id?: string
+          monto?: number
+          tipo?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          color: string
+          created_at: string
+          negocio: string | null
+          nombre: string
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          negocio?: string | null
+          nombre?: string
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          negocio?: string | null
+          nombre?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
