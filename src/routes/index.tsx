@@ -54,7 +54,7 @@ type Limite = {
   contexto: string;
   monto: number;
   fecha: string; // YYYY-MM-DD
-  consejo?: string;
+  consejo?: string | undefined;
   comparaCon: ComparaCon;
   llevaManual: number;
   avisosRespondidos: EstadoAlerta[];
