@@ -334,7 +334,7 @@ export default function Index() {
               ) : seccion === "mis-decisiones" ? (
                 <MisDecisiones />
               ) : estado.cerrado ? (
-                <Cierre onNuevo={() => guardar({ limites: estado.limites, cerrado: false })} />
+                <Cierre onNuevo={() => setEstado((e) => ({ ...e, cerrado: false }))} />
               ) : (
                 <div className="space-y-6">
                   {limitesConEstado.map((limite) => (
