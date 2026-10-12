@@ -2,14 +2,13 @@ import { useRef, useState } from "react";
 import {
   calcularTotales,
   descargarPlantilla,
-  guardarNumeros,
-  leerNumeros,
   parseArchivoNumeros,
   pesos,
   type FilaConError,
   type FilaNumero,
   type NumerosGuardados as Guardado,
 } from "@/lib/numeros";
+import { guardarNumerosDB } from "@/lib/datos";
 
 type EstadoPrevia =
   | { tipo: "nada" }
@@ -18,8 +17,14 @@ type EstadoPrevia =
   | { tipo: "error-columnas"; columnasFaltantes: string[] }
   | { tipo: "revisar"; filas: FilaNumero[]; filasConError: FilaConError[]; totalFilas: number };
 
-export function MisNumeros() {
-  const [guardado, setGuardado] = useState<Guardado | null>(() => leerNumeros());
+export function MisNumeros({
+  guardadoInicial,
+  onGuardado,
+}: {
+  guardadoInicial: Guardado | null;
+  onGuardado: (g: Guardado) => void;
+}) {
+  const [guardado, setGuardado] = useState<Guardado | null>(guardadoInicial);
   const [previa, setPrevia] = useState<EstadoPrevia>({ tipo: "nada" });
   const [procesando, setProcesando] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,10 +63,18 @@ export function MisNumeros() {
     }
   }
 
-  function confirmarCarga(filas: FilaNumero[]) {
-    const g = guardarNumeros(filas);
-    setGuardado(g);
-    setPrevia({ tipo: "nada" });
+  async function confirmarCarga(filas: FilaNumero[]) {
+    setProcesando(true);
+    try {
+      const g = await guardarNumerosDB(filas);
+      setGuardado(g);
+      onGuardado(g);
+      setPrevia({ tipo: "nada" });
+    } catch {
+      alert("No pudimos guardar tus números. Intenta de nuevo.");
+    } finally {
+      setProcesando(false);
+    }
   }
 
   if (previa.tipo === "revisar") {

@@ -8,3 +8,4 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+- Supabase/Cloud data layer: src/lib/datos.ts is the only module that reads/writes user data (profiles, limites, numeros, decisiones); RLS scopes rows to auth.uid(). Why: one place to swap storage.

@@ -6,9 +6,19 @@ import { MenuLateral, type Seccion } from "@/components/MenuLateral";
 import { MisNumeros } from "@/components/MisNumeros";
 import { MisDecisiones } from "@/components/MisDecisiones";
 import { QueHacerHoy } from "@/components/QueHacerHoy";
-import { leerNumerosGuardados, type FilaNumero } from "@/lib/numeros";
+import { type FilaNumero, type NumerosGuardados } from "@/lib/numeros";
+import { supabase } from "@/integrations/supabase/client";
 import {
-  agregarDecision,
+  actualizarLimiteDB,
+  agregarDecisionDB,
+  crearLimiteDB,
+  guardarPerfilDB,
+  leerLimitesDB,
+  leerNumerosDB,
+  leerPerfilDB,
+} from "@/lib/datos";
+import { Acceso } from "@/components/Acceso";
+import {
   calcularEstadoAlerta,
   calcularLlevaMonto,
   clientesDisponibles,
@@ -61,10 +71,7 @@ type Estado = { limites: Limite[]; cerrado: boolean };
 
 type Perfil = { nombre: string; color: string; negocio: string };
 
-const STORAGE_KEY = "limit.estado.v1";
 const BIENVENIDA_KEY = "limit.bienvenida.v1";
-const INTRO_KEY = "limit.intro.v2";
-const PERFIL_KEY = "limit.perfil.v1";
 
 const COLORES_PERFIL = [
   { nombre: "Rosa", valor: "#FFAEEE" },
@@ -76,27 +83,6 @@ const COLOR_PERFIL_POR_DEFECTO = COLORES_PERFIL[0]!.valor;
 
 function nuevoId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function leerPerfil(): Perfil {
-  const porDefecto: Perfil = {
-    nombre: "",
-    color: COLOR_PERFIL_POR_DEFECTO,
-    negocio: "",
-  };
-  if (typeof window === "undefined") return porDefecto;
-  try {
-    const raw = window.localStorage.getItem(PERFIL_KEY);
-    if (!raw) return porDefecto;
-    const parsed = JSON.parse(raw) as Partial<Perfil>;
-    return {
-      nombre: typeof parsed.nombre === "string" ? parsed.nombre : "",
-      color: typeof parsed.color === "string" && parsed.color ? parsed.color : porDefecto.color,
-      negocio: typeof parsed.negocio === "string" ? parsed.negocio : "",
-    };
-  } catch {
-    return porDefecto;
-  }
 }
 
 function formatoFechaGoogle(fecha: string) {
@@ -112,34 +98,6 @@ function linkGoogleCalendar(limite: Limite) {
     details: `Tu límite era ${pesos(limite.monto)}. ${limite.contexto ?? ""}`.trim(),
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
-
-function leerEstado(): Estado {
-  if (typeof window === "undefined") return { limites: [], cerrado: false };
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { limites: [], cerrado: false };
-    const parsed = JSON.parse(raw) as {
-      limites?: Limite[];
-      limite?: Limite | null;
-      cerrado?: boolean;
-    };
-    // compat: estado anterior guardaba un solo límite en "limite"
-    let limites: Limite[] = Array.isArray(parsed.limites) ? parsed.limites : [];
-    if (limites.length === 0 && parsed.limite) {
-      limites = [parsed.limite];
-    }
-    for (const l of limites) {
-      if (typeof l.contexto !== "string") l.contexto = "";
-      if (typeof l.id !== "string" || !l.id) l.id = nuevoId();
-      if (!l.comparaCon) l.comparaCon = { tipo: "manual" };
-      if (typeof l.llevaManual !== "number") l.llevaManual = 0;
-      if (!Array.isArray(l.avisosRespondidos)) l.avisosRespondidos = [];
-    }
-    return { limites, cerrado: parsed.cerrado === true };
-  } catch {
-    return { limites: [], cerrado: false };
-  }
 }
 
 function diasRestantes(fecha: string) {
@@ -204,65 +162,105 @@ export default function Index() {
     negocio: "",
   });
   const [bienvenidaVista, setBienvenidaVista] = useState(false);
-  const [introVisto, setIntroVisto] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [tienePerfil, setTienePerfil] = useState(false);
   const [listo, setListo] = useState(false);
+  const [cargandoDatos, setCargandoDatos] = useState(false);
+  const [numerosGuardados, setNumerosGuardados] = useState<NumerosGuardados | null>(null);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [seccion, setSeccion] = useState<Seccion>("que-hacer-hoy");
 
   useEffect(() => {
-    setEstado(leerEstado());
-    setPerfil(leerPerfil());
     try {
       setBienvenidaVista(window.localStorage.getItem(BIENVENIDA_KEY) === "1");
-      setIntroVisto(window.localStorage.getItem(INTRO_KEY) === "1");
     } catch {
       /* ignorar */
     }
-    setListo(true);
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") return;
+      setUserId(session?.user.id ?? null);
+    });
+    supabase.auth.getUser().then(({ data }) => {
+      setUserId(data.user?.id ?? null);
+      setListo(true);
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
 
-  function guardarPerfil(next: Perfil) {
+  useEffect(() => {
+    if (!userId) {
+      setTienePerfil(false);
+      setEstado({ limites: [], cerrado: false });
+      setNumerosGuardados(null);
+      return;
+    }
+    let activo = true;
+    setCargandoDatos(true);
+    Promise.all([leerPerfilDB(), leerLimitesDB(), leerNumerosDB()])
+      .then(([p, limites, nums]) => {
+        if (!activo) return;
+        if (p) setPerfil(p);
+        setTienePerfil(!!p);
+        setEstado({ limites, cerrado: false });
+        setNumerosGuardados(nums);
+      })
+      .catch(() => {})
+      .finally(() => activo && setCargandoDatos(false));
+    return () => {
+      activo = false;
+    };
+  }, [userId]);
+
+  async function guardarPerfil(next: Perfil) {
     setPerfil(next);
     try {
-      window.localStorage.setItem(PERFIL_KEY, JSON.stringify(next));
+      await guardarPerfilDB(next);
     } catch {
       /* ignorar */
     }
+    setTienePerfil(true);
   }
 
-  function guardar(next: Estado) {
-    setEstado(next);
+  async function agregarLimite(l: Limite) {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      const { id: _id, ...resto } = l;
+      const creado = await crearLimiteDB(resto);
+      setEstado((e) => ({ limites: [...e.limites, creado], cerrado: false }));
+      setMostrarFormulario(false);
     } catch {
-      /* ignorar */
+      alert("No pudimos guardar tu límite. Intenta de nuevo.");
     }
-  }
-
-  function agregarLimite(l: Limite) {
-    guardar({ limites: [...estado.limites, l], cerrado: false });
-    setMostrarFormulario(false);
   }
 
   function quitarLimite(id: string, cortado: boolean) {
-    const restantes = estado.limites.filter((l) => l.id !== id);
-    guardar({ limites: restantes, cerrado: cortado && restantes.length === 0 });
+    void actualizarLimiteDB(id, { cerrado: true }).catch(() => {});
+    setEstado((e) => {
+      const restantes = e.limites.filter((l) => l.id !== id);
+      return { limites: restantes, cerrado: cortado && restantes.length === 0 };
+    });
   }
 
   function marcarAvisoRespondido(id: string, aviso: EstadoAlerta) {
-    guardar({
-      ...estado,
-      limites: estado.limites.map((l) =>
-        l.id === id ? { ...l, avisosRespondidos: [...l.avisosRespondidos, aviso] } : l,
-      ),
-    });
+    const actual = estado.limites.find((l) => l.id === id);
+    if (!actual) return;
+    const avisos = [...actual.avisosRespondidos, aviso];
+    void actualizarLimiteDB(id, { avisosRespondidos: avisos }).catch(() => {});
+    setEstado((e) => ({
+      ...e,
+      limites: e.limites.map((l) => (l.id === id ? { ...l, avisosRespondidos: avisos } : l)),
+    }));
   }
 
   function actualizarLlevaManual(id: string, valor: number) {
-    guardar({
-      ...estado,
-      limites: estado.limites.map((l) => (l.id === id ? { ...l, llevaManual: valor } : l)),
-    });
+    void actualizarLimiteDB(id, { llevaManual: valor }).catch(() => {});
+    setEstado((e) => ({
+      ...e,
+      limites: e.limites.map((l) => (l.id === id ? { ...l, llevaManual: valor } : l)),
+    }));
+  }
+
+  function agregarDecision(d: Parameters<typeof agregarDecisionDB>[0]) {
+    void agregarDecisionDB(d).catch(() => {});
   }
 
   function manejarSigo(l: AlertaLimite) {
@@ -292,9 +290,14 @@ export default function Index() {
     quitarLimite(l.id, true);
   }
 
+  async function cerrarSesion() {
+    await supabase.auth.signOut();
+    setSeccion("que-hacer-hoy");
+  }
+
   const hayLimites = estado.limites.length > 0;
-  const mostrarPanel = listo && bienvenidaVista && introVisto;
-  const numeros = leerNumerosGuardados();
+  const mostrarPanel = listo && bienvenidaVista && !!userId && tienePerfil && !cargandoDatos;
+  const numeros = numerosGuardados?.filas ?? [];
   const limitesConEstado = calcularLimitesConEstado(estado.limites, numeros);
   const alertas = limitesConEstado.filter(necesitaDecision);
 
@@ -305,8 +308,16 @@ export default function Index() {
         <header className="mb-8 flex items-baseline gap-3">
           <span className="text-display text-3xl text-primary">Limit</span>
           <span className="text-sm text-muted-foreground">
-            {perfil.nombre ? `hola, ${perfil.nombre}` : "tus límites, por escrito"}
+            {userId && perfil.nombre ? `hola, ${perfil.nombre}` : "tus límites, por escrito"}
           </span>
+          {userId ? (
+            <button
+              onClick={cerrarSesion}
+              className="ml-auto text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Cerrar sesión
+            </button>
+          ) : null}
         </header>
 
         {!listo ? null : !bienvenidaVista ? (
@@ -320,18 +331,12 @@ export default function Index() {
               setBienvenidaVista(true);
             }}
           />
-        ) : !introVisto ? (
-          <Intro
-            onContinuar={(nuevoPerfil) => {
-              guardarPerfil(nuevoPerfil);
-              try {
-                window.localStorage.setItem(INTRO_KEY, "1");
-              } catch {
-                /* ignorar */
-              }
-              setIntroVisto(true);
-            }}
-          />
+        ) : !userId ? (
+          <Acceso />
+        ) : cargandoDatos ? (
+          <p className="text-muted-foreground">Cargando…</p>
+        ) : !tienePerfil ? (
+          <Intro onContinuar={(nuevoPerfil) => void guardarPerfil(nuevoPerfil)} />
         ) : (
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
             <MenuLateral activa={seccion} onCambiar={setSeccion} />
@@ -352,11 +357,11 @@ export default function Index() {
                   onCortoAlerta={manejarCorto}
                 />
               ) : seccion === "mis-numeros" ? (
-                <MisNumeros />
+                <MisNumeros guardadoInicial={numerosGuardados} onGuardado={setNumerosGuardados} />
               ) : seccion === "mis-decisiones" ? (
                 <MisDecisiones />
               ) : estado.cerrado ? (
-                <Cierre onNuevo={() => guardar({ limites: estado.limites, cerrado: false })} />
+                <Cierre onNuevo={() => setEstado((e) => ({ ...e, cerrado: false }))} />
               ) : (
                 <div className="space-y-6">
                   {limitesConEstado.map((limite) => (
