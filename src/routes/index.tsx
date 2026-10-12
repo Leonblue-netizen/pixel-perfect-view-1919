@@ -263,6 +263,33 @@ export default function Index() {
     void agregarDecisionDB(d).catch(() => {});
   }
 
+  function manejarSigo(l: AlertaLimite) {
+    agregarDecision({
+      limiteDescripcion: l.descripcion,
+      loQueDeciaAlerta: mensajeAlerta(l),
+      decision: "sigo",
+      pesosEvitados: 0,
+      estimado: false,
+    });
+    if (l.estadoAlerta === "pasado") {
+      quitarLimite(l.id, false);
+    } else {
+      marcarAvisoRespondido(l.id, "riesgo");
+    }
+  }
+
+  function manejarCorto(l: AlertaLimite) {
+    const pesosEvitados = Math.max(0, l.monto - l.llevaMonto);
+    agregarDecision({
+      limiteDescripcion: l.descripcion,
+      loQueDeciaAlerta: mensajeAlerta(l),
+      decision: "corto",
+      pesosEvitados,
+      estimado: true,
+    });
+    quitarLimite(l.id, true);
+  }
+
   async function cerrarSesion() {
     await supabase.auth.signOut();
     setSeccion("que-hacer-hoy");

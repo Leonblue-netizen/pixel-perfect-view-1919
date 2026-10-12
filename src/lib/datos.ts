@@ -10,7 +10,7 @@ export type LimiteDB = {
   contexto: string;
   monto: number;
   fecha: string;
-  consejo?: string;
+  consejo?: string | undefined;
   comparaCon: ComparaCon;
   llevaManual: number;
   avisosRespondidos: EstadoAlerta[];
@@ -105,7 +105,7 @@ export async function actualizarLimiteDB(
   id: string,
   cambios: Partial<{ llevaManual: number; avisosRespondidos: EstadoAlerta[]; cerrado: boolean }>,
 ) {
-  const patch: Record<string, unknown> = {};
+  const patch: { lleva_manual?: number; avisos_respondidos?: string[]; cerrado?: boolean } = {};
   if (cambios.llevaManual !== undefined) patch.lleva_manual = cambios.llevaManual;
   if (cambios.avisosRespondidos !== undefined) patch.avisos_respondidos = cambios.avisosRespondidos;
   if (cambios.cerrado !== undefined) patch.cerrado = cambios.cerrado;
