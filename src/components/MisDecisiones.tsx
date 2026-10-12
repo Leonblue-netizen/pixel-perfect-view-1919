@@ -1,9 +1,13 @@
-import { useState } from "react";
-import { leerDecisiones, totalEvitado, type Decision } from "@/lib/limites";
+import { useEffect, useState } from "react";
+import { leerDecisionesDB } from "@/lib/datos";
+import { totalEvitado, type Decision } from "@/lib/limites";
 import { pesos } from "@/lib/numeros";
 
 export function MisDecisiones() {
-  const [decisiones] = useState<Decision[]>(() => leerDecisiones());
+  const [decisiones, setDecisiones] = useState<Decision[]>([]);
+  useEffect(() => {
+    leerDecisionesDB().then(setDecisiones).catch(() => setDecisiones([]));
+  }, []);
 
   if (decisiones.length === 0) {
     return (
